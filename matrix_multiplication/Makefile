@@ -18,4 +18,5 @@ all: $(TARGET)
 %.o: %.c
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@
 
-clean: rm -f $(OBJECTS) $(TARGET)
+clean:
+	rm $(TARGET)

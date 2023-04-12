@@ -4,7 +4,11 @@
 #include <string.h>
 #include <math.h>
 
-#define N 10
+#ifdef USE_CBLAS
+#include <cblas.h>
+#endif
+
+#define N 9
 #define ID_REF 1
 #define ROOT 0
 
@@ -106,7 +110,7 @@ int main(int argc, char* argv[]){
     printf("------ matrix B (proc %i) ------\n",ID_REF);
     print_matrix(B,n_loc,N);
   }
-
+  
   /* COMPUTATIONAL LOOP */
   for(i=0;i<n_prc;i++) {
     /* create the portion of local B matrix to be gathered */
@@ -116,6 +120,9 @@ int main(int argc, char* argv[]){
     if(i<rest || n_prc==1) MPI_Allgatherv(B_tmp,n_loc*n_loc_vect[i],MPI_DOUBLE,B_star,count_allgatherv_rest,displ_allgatherv_rest,MPI_DOUBLE,MPI_COMM_WORLD);
     else MPI_Allgatherv(B_tmp,n_loc*n_loc_vect[i],MPI_DOUBLE,B_star,count_allgatherv,displ_allgatherv,MPI_DOUBLE,MPI_COMM_WORLD);
 
+    #ifdef USE_CBLAS
+    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,n_loc,n_loc_vect[i],N,1.0,A,N,B_star,n_loc_vect[i],0.0,&C_star[n_col_sum[i]],N);
+    #else
     /* compute the C_tmp */
     for(j=0;j<n_loc;j++)   // row of A
       for(k=0;k<n_loc_vect[i];k++)  // column of B
@@ -123,7 +130,9 @@ int main(int argc, char* argv[]){
 	  idx = j*n_loc_vect[i]+k;
 	  C_star[n_col_sum[i]+(idx/n_loc_vect[i])*N+(idx%n_loc_vect[i])] += A[j*N+w]*B_star[w*n_loc_vect[i]+k];
 	}
+    #endif
   }
+  
 
   /* Gatherv of C_star matrices */
   MPI_Gatherv(C_star,N*n_loc,MPI_DOUBLE,C,count_gatherv,displ_gatherv,MPI_DOUBLE,ROOT,MPI_COMM_WORLD);
