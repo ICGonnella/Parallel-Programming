@@ -31,7 +31,7 @@ int main(int argc, char* argv[]){
   int i,j,k,w;
   /* variable needed for the right allocation of C elements */
   int idx;
-  /* variable for the files reading */
+  /* variable needed for the files reading */
   double trash;
 
   /* number of processes having one more row allocated */
