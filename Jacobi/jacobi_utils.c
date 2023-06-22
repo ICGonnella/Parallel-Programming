@@ -101,23 +101,23 @@ int local_from_global(int glob, int rank, int size, int dim){
     return glob - my_first_element_idx_glob(rank, size, dim, true);
 }
 
-int* central_elements_idx_loc(int rank, int size, int dim, int n_ce, _Bool halo){
+/*int* central_elements_idx_loc(int rank, int size, int dim, int n_ce, _Bool halo){
   int* ce = (int*)malloc(n_ce);
   int first_e = my_first_element_idx_loc(rank, dim, halo) + 1 + is_my_element(0, rank, size, dim, halo)*(dim+2);
-
-  for (int i=0;i<n_ce;++i)
+  for (int i=0;i<n_ce;++i){
     ce[i] = first_e + (i/dim)*(dim+2) +(i%dim);
+  }
   return ce;
-}
+  }*/
 
 void init_mat(double * matrix, double val, int rank, int size, int dim, _Bool halo){
   memset(matrix, 0, (dim*2)*(my_n_row(rank, size, dim,halo)));
   int n_ce = (my_n_row(rank, size, dim, halo) - is_my_element(0, rank, size, dim, halo) - is_my_element((dim+2)*(dim+2)-1, rank, size, dim, halo))*dim;
-  int* ce = central_elements_idx_loc(rank, size, dim, n_ce, halo);
+  //int* ce = central_elements_idx_loc(rank, size, dim, n_ce, halo);
+  int first_e = my_first_element_idx_loc(rank, dim, halo) + 1 + is_my_element(0, rank, size, dim, halo)*(dim+2);
   
-  for (int i=0; i<n_ce; ++i){
-    matrix[ce[i]] = val;
-  }
+  for (int i=0; i<n_ce; ++i)
+    matrix[first_e + (i/dim)*(dim+2) +(i%dim)] = val;
 }
 
 int* border_elements_idx_loc(int rank, int size, int dim, int n_be, _Bool halo){

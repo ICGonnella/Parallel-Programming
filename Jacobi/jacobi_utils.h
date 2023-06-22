@@ -56,7 +56,7 @@ int local_from_global(int glob, int rank, int size, int dim);
 
 // compute the local indices of the central elements for a given process
 // if halo==true the first SendRecive operation is not necessary
-int* central_elements_idx(int rank, int size, int dim, int n_ce, _Bool halo);
+//int* central_elements_idx(int rank, int size, int dim, int n_ce, _Bool halo);
 
 // initialize matrices
 void init_mat(double * matrix, double val, int rank, int size, int dim, _Bool halo);
