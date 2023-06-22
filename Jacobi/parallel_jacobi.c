@@ -86,7 +86,7 @@ int main(int argc, char* argv[]){
   //t_start = seconds();
   for( it = 0; it < iterations; ++it ){
     
-    //evolve(matrix, matrix_new, rank, size, dimension);
+    evolve(matrix, matrix_new, rank, size, dimension);
 
     // swap the pointers
     tmp_matrix = matrix;
@@ -99,8 +99,19 @@ int main(int argc, char* argv[]){
   //printf( "\nelapsed time = %f seconds\n", t_end - t_start );
   //printf( "\nmatrix[%zu,%zu] = %f\n", row_peek, col_peek, matrix[ ( row_peek + 1 ) * ( dimension + 2 ) + ( col_peek + 1 ) ] );
 
-  //save_gnuplot( matrix, dimension );
-  
+  _Bool done = false;
+  int rank_idx=0;
+  while(done==false){
+    if (rank==rank_idx){
+      printf("RANK %zu \n",rank);
+      save_gnuplot( matrix, n_row+n_halo, dimension+2, rank);
+      done = true;
+      rank_idx += 1;
+      MPI_Bcast(&rank_idx,1,MPI_INT,rank,MPI_COMM_WORLD);
+    }
+    else MPI_Bcast(&rank_idx,1,MPI_INT,rank_idx,MPI_COMM_WORLD);
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   free( matrix );
   free( matrix_new );
 

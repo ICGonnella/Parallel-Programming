@@ -10,7 +10,7 @@
 void print_mat(double* matrix, int n_row, int n_col);
 
 // save matrix to file
-void save_gnuplot( double *M, size_t dim );
+void save_gnuplot( double *M, int n_row, int n_col, int rank );
 
 // return the elapsed time
 double seconds( void );

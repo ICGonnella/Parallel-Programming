@@ -10,17 +10,16 @@ void print_mat(double* matrix, int n_row, int n_col){
   printf("\n--------------------------------------------------\n");
 }
 
-void save_gnuplot( double *M, size_t dimension ){
+void save_gnuplot( double *M, int n_row, int n_col, int rank ){
 
-  size_t i , j;
   const double h = 0.1;
   FILE *file;
 
-  file = fopen( "solution.dat", "w" );
-
-  for( i = 0; i < dimension + 2; ++i )
-    for( j = 0; j < dimension + 2; ++j )
-      fprintf(file, "%f\t%f\t%f\n", h * j, -h * i, M[ ( i * ( dimension + 2 ) ) + j ] );
+  if (rank==0) file = fopen("solution.dat", "w");
+  else file = fopen("solution.dat", "a");
+  
+  for(int i = 0; i < n_row*n_col; ++i)
+    fprintf(file, "%f\t%f\t%f\n", h * (i%n_row), -h * (i/n_col), M[i] );
 
   fclose( file );
 
