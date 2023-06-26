@@ -14,48 +14,40 @@ int main(int argc, char* argv[]){
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   
   // timing variables
-  double t_start, t_end, increment;
+  //double t_start, t_end;
+  double increment;
 
   // indexes for loops
-  size_t i, j, it;
+  int it;
   
   // initialize matrix
   double *matrix, *matrix_new, *tmp_matrix;
 
-  size_t dimension = 0, iterations = 0, row_peek = 0, col_peek = 0;
+  size_t dimension = 0, iterations = 0;
   size_t matrix_dimension = 0;
 
   // check on input parameters
-  if(argc != 6) {
+  if(argc != 4) {
     fprintf(stderr,"\nwrong number of arguments. Usage: ./a.out dim it n m\n");
     return 1;
   }
 
   dimension = atoi(argv[1]);
   iterations = atoi(argv[2]);
-  row_peek = atoi(argv[3]);
-  col_peek = atoi(argv[4]);
-  int ID_REF = atoi(argv[5]);
-  
+  int ID_REF = atoi(argv[3]);
+
+  // Parallelization variables
+  MPI_Comm Comm = MPI_COMM_WORLD;
+  if (size>(dimension+2)) MPI_Comm_split(MPI_COMM_WORLD, (rank < (dimension+2)), rank, &Comm);
+  MPI_Comm_rank(Comm, &rank);
+  MPI_Comm_size(Comm, &size);
+  int n_row = my_n_row(rank, size, dimension, false);
+  int n_halo = my_n_halo(rank, size);
+
   if (rank==ID_REF) {
     printf("matrix size = %zu\n", dimension);
     printf("number of iterations = %zu\n", iterations);
-    printf("element for checking = Mat[%zu,%zu]\n",row_peek, col_peek);
-    printf("size = %zu \n",size);
   }
-  
-  if((row_peek > dimension) || (col_peek > dimension)){
-    if (rank==ID_REF){
-      fprintf(stderr, "Cannot Peek a matrix element outside of the matrix dimension\n");
-      fprintf(stderr, "Arguments n and m must be smaller than %zu\n", dimension);
-    }
-    return 1;
-  }
-
-  // Parallelization variables
-  size = size>(dimension+2) ? dimension+2 : size;
-  int n_row = my_n_row(rank, size, dimension, false);
-  int n_halo = my_n_halo(rank, size);
 
   // Create local matrices
   matrix_dimension = sizeof(double) * ( n_row + n_halo ) * ( dimension + 2 );
@@ -63,62 +55,55 @@ int main(int argc, char* argv[]){
   matrix_new = ( double* )malloc( matrix_dimension );
 
   if (rank==ID_REF) {
-    printf("matrix dimension = %zu * %zu * %zu = %zu\n",sizeof(double), n_row+n_halo, dimension+2, matrix_dimension);
     printf("number of rows = %zu\n", n_row);
     printf("number of halos = %zu\n", n_halo);
+    printf("number of rows total = %zu\n", my_n_row(rank, size, dimension, true));
   }
-  
-  //memset( matrix, 0, matrix_dimension );
-  //memset( matrix_new, 0, matrix_dimension );
 
   //fill initial values  
   init_mat(matrix, 0.5,rank, size, dimension, true);
   init_mat(matrix_new, 0.5,rank, size, dimension, true);
-  if (rank==ID_REF) print_mat(matrix, n_row+n_halo, dimension+2);
 
   // set up borders 
   increment = 100.0 / ( dimension + 1 );
   init_border_conditions(matrix, increment, rank, size, dimension, true);
   init_border_conditions(matrix_new, increment, rank, size, dimension, true);
-  if (rank==ID_REF) print_mat(matrix, n_row+n_halo, dimension+2);
   
   // start algorithm
   //t_start = seconds();
-  for( it = 0; it < iterations; ++it ){
-    
-    evolve(matrix, matrix_new, rank, size, dimension);
+  
+  #ifdef ACC
+  const acc_device_t devtype = acc_get_device_type(); // Device type (e.g. Tesla)
+  const int num_devs = acc_get_num_devices(devtype); // Number of devices per node
+  acc_set_device_num(rank % num_devs, devtype); // To run on multiple nodes
+  acc_init(devtype);
 
+#pragma acc enter data copyin(matrix[:my_last_element_idx_loc(rank, size, dimension,true)], matrix_new[:my_last_element_idx_loc(rank, size, dimension,true)])
+  #endif
+  
+  for( it = 0; it < iterations; ++it ){
+   
+    evolve(matrix, matrix_new, rank, size, dimension, Comm);
     // swap the pointers
     tmp_matrix = matrix;
     matrix = matrix_new;
     matrix_new = tmp_matrix;
-
+    
   }
   //t_end = seconds();
+
+  #ifdef ACC
+  #pragma acc exit data copyout(matrix[:my_last_element_idx_loc(rank, size, dimension,true)], matrix_new[:my_last_element_idx_loc(rank, size, dimension,true)])
+  #endif
+
   
   //printf( "\nelapsed time = %f seconds\n", t_end - t_start );
-  //printf( "\nmatrix[%zu,%zu] = %f\n", row_peek, col_peek, matrix[ ( row_peek + 1 ) * ( dimension + 2 ) + ( col_peek + 1 ) ] );
 
-  _Bool done = false;
-  int rank_idx=0;
-  while(done==false){
-    if (rank==rank_idx){
-      printf("RANK %zu \n",rank);
-      save_gnuplot( matrix, n_row+n_halo, dimension+2, rank);
-      done = true;
-      rank_idx += 1;
-      MPI_Bcast(&rank_idx,1,MPI_INT,rank,MPI_COMM_WORLD);
-    }
-    else MPI_Bcast(&rank_idx,1,MPI_INT,rank_idx,MPI_COMM_WORLD);
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
+  save_result(matrix, rank, size, dimension, Comm);
+
   free( matrix );
   free( matrix_new );
 
   MPI_Finalize();
   return 0;
 }
-
-
-
-

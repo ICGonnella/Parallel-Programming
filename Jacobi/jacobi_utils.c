@@ -10,16 +10,17 @@ void print_mat(double* matrix, int n_row, int n_col){
   printf("\n--------------------------------------------------\n");
 }
 
-void save_gnuplot( double *M, int n_row, int n_col, int rank ){
+void save_gnuplot( double *M, int n_row, int n_col, double offset, int rank ){
 
   const double h = 0.1;
   FILE *file;
 
   if (rank==0) file = fopen("solution.dat", "w");
   else file = fopen("solution.dat", "a");
-  
-  for(int i = 0; i < n_row*n_col; ++i)
-    fprintf(file, "%f\t%f\t%f\n", h * (i%n_row), -h * (i/n_col), M[i] );
+
+  for( int i = 0; i < n_row; ++i )
+    for( int j = 0; j < n_col; ++j )
+      fprintf(file, "%f\t%f\t%f\n", h * j, -h * (i+offset), M[ i*n_col + j ] );
 
   fclose( file );
 
@@ -101,42 +102,23 @@ int local_from_global(int glob, int rank, int size, int dim){
     return glob - my_first_element_idx_glob(rank, size, dim, true);
 }
 
-/*int* central_elements_idx_loc(int rank, int size, int dim, int n_ce, _Bool halo){
-  int* ce = (int*)malloc(n_ce);
-  int first_e = my_first_element_idx_loc(rank, dim, halo) + 1 + is_my_element(0, rank, size, dim, halo)*(dim+2);
-  for (int i=0;i<n_ce;++i){
-    ce[i] = first_e + (i/dim)*(dim+2) +(i%dim);
-  }
-  return ce;
-  }*/
-
 void init_mat(double * matrix, double val, int rank, int size, int dim, _Bool halo){
   memset(matrix, 0, (dim*2)*(my_n_row(rank, size, dim,halo)));
   int n_ce = (my_n_row(rank, size, dim, halo) - is_my_element(0, rank, size, dim, halo) - is_my_element((dim+2)*(dim+2)-1, rank, size, dim, halo))*dim;
-  //int* ce = central_elements_idx_loc(rank, size, dim, n_ce, halo);
   int first_e = my_first_element_idx_loc(rank, dim, halo) + 1 + is_my_element(0, rank, size, dim, halo)*(dim+2);
   
   for (int i=0; i<n_ce; ++i)
     matrix[first_e + (i/dim)*(dim+2) +(i%dim)] = val;
 }
 
-int* border_elements_idx_loc(int rank, int size, int dim, int n_be, _Bool halo){
-  int* be = (int*)malloc(n_be);
-  int first_e = my_first_element_idx_loc(rank, dim, halo);
-
-  for (int i=0; i<n_be; ++i)
-    be[i] = first_e + (dim+2)*i;
-  return be;
-}
-
 void init_border_conditions(double* matrix, double increment, int rank, int size, int dim, _Bool halo){
 
   // first column vertical border conditions
   int n_be = my_n_row(rank, size, dim, halo);
-  int* be = border_elements_idx_loc(rank, size, dim, n_be, halo);
   int first_increment_factor = my_first_row_idx_glob(rank, size, dim, halo);
+  int first_e = my_first_element_idx_loc(rank, dim, halo);
   for (int i=0; i<n_be;++i)
-    matrix[be[i]] = increment*(i+first_increment_factor);
+    matrix[first_e + (dim+2)*i] = increment*(i+first_increment_factor);
 
   // last row horizontal border condition
   if (is_my_element((dim+2)*(dim+2)-1, rank, size, dim, halo)){
@@ -154,37 +136,93 @@ int neighbor(int rank, int size, int up){
 }
 
 
-void update_halos(double * matrix, int rank, int size, int dim){
+void update_halos(double * matrix, int rank, int size, int dim, MPI_Comm Comm){
   int up_neigh = neighbor(rank, size,true);
   int down_neigh = neighbor(rank, size, false);
+  
   if (up_neigh>=0)
     MPI_Sendrecv(matrix + my_first_element_idx_loc(rank, dim, false),
 		 dim + 2, MPI_DOUBLE, up_neigh, 0,
 		 matrix + my_first_element_idx_loc(rank, dim, true),
-		 dim + 2, MPI_DOUBLE, up_neigh, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		 dim + 2, MPI_DOUBLE, up_neigh, 0, Comm, MPI_STATUS_IGNORE);
   
   if (down_neigh>=0)
     MPI_Sendrecv(matrix + my_last_element_idx_loc(rank, size, dim, false) - (dim + 1),
 		 dim + 2, MPI_DOUBLE, down_neigh, 0,
 		 matrix + my_last_element_idx_loc(rank, size, dim, true) - (dim + 1),
-		 dim + 2, MPI_DOUBLE, down_neigh, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		 dim + 2, MPI_DOUBLE, down_neigh, 0, Comm, MPI_STATUS_IGNORE);
   
 }
 
-void evolve( double * matrix, double *matrix_new, int rank, int size, int dim ){
+void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm ){
   //This will be a row dominant program
+  #ifdef ACC
+  int start_1 = my_first_element_idx_loc(rank, dim, false);
+  int start_2 = my_last_element_idx_loc(rank, size, dim, false)-(dim+1);
+  if (rank>0){
+    #pragma acc update host(matrix[start_1:dim+1])
+  }
+  if (rank<size-1){
+    #pragma acc update host(matrix[start_2:dim+1])
+  }
+  #endif
+    
+  update_halos(matrix, rank, size, dim, Comm);
 
-  update_halos(matrix, rank, size, dim);
-  
+  #ifdef ACC
+  start_1 = my_first_element_idx_loc(rank, dim, true);
+  start_2 = my_last_element_idx_loc(rank, size, dim, true)-(dim+1);
+  if (rank>0){
+    #pragma acc update device(matrix[start_1:dim+1])
+  }
+  if (rank<size-1){
+#pragma acc update device(matrix[start_2:dim+1])
+  }
+  #endif
+
   int start = my_first_element_idx_loc(rank, dim, false)+1;
+  int n_row = my_n_row(rank, size, dim, false);
+  if (rank==0){
+    start += dim+2;
+    n_row -= 1;
+  }
+  if (rank==size-1)
+    n_row -= 1;
   int idx;
-  for (int i=0; i<my_n_row(rank, size, dim, false)*dim; ++i) {
+
+  #ifdef ACC
+  #pragma acc parallel loop present(matrix[:my_last_element_idx_loc(rank, size, dim,true)], matrix_new[:my_last_element_idx_loc(rank, size, dim,true)])
+  #endif
+  for (int i=0; i<n_row*dim; ++i) {
     idx = start + i%dim + (dim+2)*(i/dim);
     matrix_new[idx] = (0.25) *
       ( matrix[idx - (dim + 2)] +
 	matrix[idx + (dim + 2)] +
 	matrix[idx - 1] +
 	matrix[idx + 1]);
+  }
+}
+
+int* set_offset(int rank, int size, int dim){
+  int* offset = (int*)malloc(size * sizeof(int));
+  offset[0] = 0;
+  if(size>1){
+    offset[1] = my_n_row(0,size,dim,false) + 1;
+    for (int i = 2; i < size; i++) offset[i] = offset[i - 1] + my_n_row(i,size,dim,false);
+  }
+  return offset;
+}
+
+void save_result(double* matrix, int rank, int size, int dim, MPI_Comm Comm){
+
+  int* offset = set_offset(rank, size, dim);
+  
+  for (int i = 0; i < size; ++i) {
+    if (rank == i) {
+      save_gnuplot( matrix+(rank>0)*(dim+2), my_n_row(rank, size, dim, false), dim+2, offset[i], rank);
+      printf("DONE rank %zu\n", rank);
+    }
+    MPI_Barrier(Comm);  // Synchronize before the next process prints
   }
 
 }

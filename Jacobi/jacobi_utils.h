@@ -6,11 +6,15 @@
 #include <mpi.h>
 #include <stdbool.h>
 
+#ifdef ACC
+#include <openacc.h>
+#endif
+
 // print matrix
 void print_mat(double* matrix, int n_row, int n_col);
 
 // save matrix to file
-void save_gnuplot( double *M, int n_row, int n_col, int rank );
+void save_gnuplot( double *M, int n_row, int n_col, double offset, int rank );
 
 // return the elapsed time
 double seconds( void );
@@ -71,7 +75,13 @@ void init_border_conditions(double* matrix, double increment, int rank, int size
 int neighbor(int rank, int size, int up);
 
 // update the halos
-void update_halos(double * matrix, int rank, int size, int dim);
+void update_halos(double * matrix, int rank, int size, int dim, MPI_Comm Comm);
 
 // evolve Jacobi
-void evolve( double * matrix, double *matrix_new, int rank, int size, int dim );
+void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm );
+
+// create offset vector
+int* set_offset(int rank, int size, int dim);
+
+// save results on the file solution.dat
+void save_result(double* matrix, int rank, int size, int dim, MPI_Comm Comm);

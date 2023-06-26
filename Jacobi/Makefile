@@ -1,29 +1,37 @@
 # inputs for the executables
 
-dim = 10
-it  = 100
-r = 3
-c = 3
+ARGS = 10 100
+ID_REF = 0
+NP = 1
 
-CC=cc
-CFLAGS=-O3
+CC = mpicc
+CFLAGS = -O3
 
-SRCS=$(wildcard *.c)
+SRCS = $(wildcard *.c)
 EXE=$(SRCS:.c=.x)
+EXECUTABLE = jacobi
 
-all: $(EXE)
+all: $(EXECUTABLE)
 
-run: clean all
-	./$(EXE) $(dim) $(it) $(r) $(c)
+$(EXECUTABLE): $(EXE)
+	$(CC) $(CFLAGS) $^ -o $@
 
 %.x: %.c
-	$(CC) $< $(CFLAGS) -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
+
+run: 
+	mpirun -np $(NP) $(EXECUTABLE) $(ARGS) $(ID_REF)
+
+acc: CFLAGS += -DACC -acc -Minfo=accel -ta=tesla
+acc: clean
+acc: $(EXECUTABLE)
 
 clean:
-	@rm -f *~ $(EXE) solution.dat 
+	rm -f *~ $(EXECUTABLE) $(EXE) solution.dat
 
 plot:
 	@gnuplot -p plot.plt
 
 .PHONY: clean plot all
+
 
