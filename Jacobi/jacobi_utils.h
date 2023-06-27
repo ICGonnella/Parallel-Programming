@@ -58,18 +58,11 @@ int global_from_local(int loc, int rank, int size, int dim);
 // from global coordinates to local ones
 int local_from_global(int glob, int rank, int size, int dim);
 
-// compute the local indices of the central elements for a given process
-// if halo==true the first SendRecive operation is not necessary
-//int* central_elements_idx(int rank, int size, int dim, int n_ce, _Bool halo);
-
 // initialize matrices
 void init_mat(double * matrix, double val, int rank, int size, int dim, _Bool halo);
 
-// compute the local indices of the border elements for a given process
-int* border_elements_idx_loc(int rank, int size, int dim, int n_be, _Bool halo);
-
-// impose the border conditions
-void init_border_conditions(double* matrix, double increment, int rank, int size, int dim, _Bool halo);
+// impose the boundary conditions
+void init_boundary_conditions(double* matrix, double increment, int rank, int size, int dim, _Bool halo);
 
 // compute the neighbours of a given process
 int neighbor(int rank, int size, int up);
@@ -78,10 +71,13 @@ int neighbor(int rank, int size, int up);
 void update_halos(double * matrix, int rank, int size, int dim, MPI_Comm Comm);
 
 // evolve Jacobi
-void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm );
+double evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm );
 
 // create offset vector
 int* set_offset(int rank, int size, int dim);
 
 // save results on the file solution.dat
 void save_result(double* matrix, int rank, int size, int dim, MPI_Comm Comm);
+
+// save times
+void save_times(int rank, int size, int dim, int iter, double t_tot, double t_comp, MPI_Comm Comm);

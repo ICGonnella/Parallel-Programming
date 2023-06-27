@@ -111,16 +111,16 @@ void init_mat(double * matrix, double val, int rank, int size, int dim, _Bool ha
     matrix[first_e + (i/dim)*(dim+2) +(i%dim)] = val;
 }
 
-void init_border_conditions(double* matrix, double increment, int rank, int size, int dim, _Bool halo){
+void init_boundary_conditions(double* matrix, double increment, int rank, int size, int dim, _Bool halo){
 
-  // first column vertical border conditions
+  // first column vertical boundary conditions
   int n_be = my_n_row(rank, size, dim, halo);
   int first_increment_factor = my_first_row_idx_glob(rank, size, dim, halo);
   int first_e = my_first_element_idx_loc(rank, dim, halo);
   for (int i=0; i<n_be;++i)
     matrix[first_e + (dim+2)*i] = increment*(i+first_increment_factor);
 
-  // last row horizontal border condition
+  // last row horizontal boundary condition
   if (is_my_element((dim+2)*(dim+2)-1, rank, size, dim, halo)){
     int start = my_last_element_idx_loc(rank, size, dim, true) - (dim+1);
     for (int i=0; i<(dim+2); ++i)
@@ -154,8 +154,10 @@ void update_halos(double * matrix, int rank, int size, int dim, MPI_Comm Comm){
   
 }
 
-void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm ){
+double evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm ){
   //This will be a row dominant program
+
+  double tic, toc;
   #ifdef ACC
   int start_1 = my_first_element_idx_loc(rank, dim, false);
   int start_2 = my_last_element_idx_loc(rank, size, dim, false)-(dim+1);
@@ -190,6 +192,7 @@ void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, M
     n_row -= 1;
   int idx;
 
+  tic = MPI_Wtime();
   #ifdef ACC
   #pragma acc parallel loop present(matrix[:my_last_element_idx_loc(rank, size, dim,true)], matrix_new[:my_last_element_idx_loc(rank, size, dim,true)])
   #endif
@@ -201,6 +204,8 @@ void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, M
 	matrix[idx - 1] +
 	matrix[idx + 1]);
   }
+  toc = MPI_Wtime();
+  return toc - tic;
 }
 
 int* set_offset(int rank, int size, int dim){
@@ -225,4 +230,22 @@ void save_result(double* matrix, int rank, int size, int dim, MPI_Comm Comm){
     MPI_Barrier(Comm);  // Synchronize before the next process prints
   }
 
+}
+
+void save_times(int rank, int size, int dim, int iter, double t_tot, double t_comp, MPI_Comm Comm){
+
+  FILE *file_tot, *file_comp;
+
+  for (int i = 0; i < size; ++i) {
+    if(rank==i) {
+      file_tot = fopen("time_tot.dat", "a");
+      file_comp = fopen("time_comp.dat", "a");
+      fprintf(file_tot, "%zu\t%zu\t%zu\t%zu\t%f\n", rank, size, dim, iter, t_tot );
+      fprintf(file_comp, "%zu\t%zu\t%zu\t%zu\t%f\n", rank, size, dim, iter, t_comp );
+      fclose(file_tot);
+      fclose(file_comp);
+    }
+    MPI_Barrier(Comm);
+  }
+  
 }

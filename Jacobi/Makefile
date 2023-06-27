@@ -27,7 +27,7 @@ acc: clean
 acc: $(EXECUTABLE)
 
 clean:
-	rm -f *~ $(EXECUTABLE) $(EXE) solution.dat
+	rm -f *~ $(EXECUTABLE) $(EXE) solution.dat *t1
 
 plot:
 	@gnuplot -p plot.plt
