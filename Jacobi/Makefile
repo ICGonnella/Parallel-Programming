@@ -13,11 +13,8 @@ EXECUTABLE = jacobi
 
 all: $(EXECUTABLE)
 
-$(EXECUTABLE): $(EXE)
+$(EXECUTABLE): $(SRCS)
 	$(CC) $(CFLAGS) $^ -o $@
-
-%.x: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
 
 run: 
 	mpirun -np $(NP) $(EXECUTABLE) $(ARGS) $(ID_REF)
