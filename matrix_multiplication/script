@@ -1,0 +1,15 @@
+#!/bin/bash
+
+declare -a NP=("1" "2" "5" "8" "10")
+
+declare -a args=("50000 0 0")
+
+for ((i=0; i<${#NP[@]}; i++))
+do
+    for ((j=0; j<${#args[@]}; j++))
+    do
+	mpirun -np "${NP[$i]}" matrix_mul.o "${args[$j]}"
+ 
+    done
+done
+	   

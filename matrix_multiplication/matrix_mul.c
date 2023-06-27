@@ -17,10 +17,10 @@ void save_times(int rank, int size, int dim, double t_tot, double t_comp, MPI_Co
 
 void print_matrix(double* A, int n_loc, int N_);
 
+void create_matrix(char* name, int val, int N_);
 
 #define ID_REF 0
 #define ROOT 0
-#define N 5
 
 int main(int argc, char* argv[]){
 
@@ -31,9 +31,16 @@ int main(int argc, char* argv[]){
   MPI_Comm_rank( MPI_COMM_WORLD, &id);
   MPI_Comm_size(MPI_COMM_WORLD, &n_prc);
 
+  if(argc != 4) {
+    fprintf(stderr,"\nwrong number of arguments. Usage: ./a.out dim it n m\n");
+    return 1;
+  }
+  
   /* time variables */
   double tic1,tic2,tic3, communication_t=0, computation_t=0;
-  
+  int N = atoi(argv[1]);
+  int create = atoi(argv[2]);
+  int val = atoi(argv[3]);
   /* indices needed for the loops */
   int i,j;
   #ifndef USE_CBLAS
@@ -129,6 +136,13 @@ int main(int argc, char* argv[]){
       displ_gatherv[i]= i>0 ? displ_gatherv[i-1]+count_gatherv[i-1] : 0;
     }
 
+    /* if it has to be created, create the matrices files */
+    if (id==ROOT && create==1){
+      create_matrix("matrixA.csv",val,N);
+      create_matrix("matrixB.csv",val,N);
+      printf("MATRICES HAVE BEEN CREATED\n");
+    }
+    MPI_Barrier(Comm);
     /* each process reads the correct portion of the input matrices */
     FILE *fileA, *fileB;
     fileA = fopen("matrixA.csv","r");
@@ -259,4 +273,13 @@ void print_matrix(double* A, int n_loc, int N_){
     }
     fprintf(stdout,"\n");
   }
+}
+
+void create_matrix(char* name, int val, int N_){
+
+  FILE *file = fopen(name,"w");
+  for (int i=0;i<N_*N_;i++)
+    fprintf(file, "%u ", val);
+  fclose(file);
+  
 }
