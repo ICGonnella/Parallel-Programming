@@ -10,14 +10,11 @@
  * Last revision: March 2016
  */ 
 
-#include <complex.h>
-#include <fftw3.h>
 #include <stdbool.h>
 #include <string.h>
 #include "utilities.h"
 
 double seconds(){
-
   /* 
    * Return the second elapsed since Epoch (00:00:00 UTC, January 1, 1970) 
    *
@@ -43,7 +40,7 @@ int index_f ( int i1, int i2, int i3, int n1, int n2, int n3)
 }
 
 
-void init_fftw(fftw_mpi_handler *fft, int n1, int n2, int n3, MPI_Comm mpi_comm)
+void init_fftw(fftw_mpi_handler *fft, int n1, int n2, int n3, MPI_Comm comm)
 {
   /*
    * Call to fftw_mpi_init is needed to initialize a parallel enviroment for the fftw_mpi
@@ -59,6 +56,8 @@ void init_fftw(fftw_mpi_handler *fft, int n1, int n2, int n3, MPI_Comm mpi_comm)
    *  HINT: the allocation size is given by fftw_mpi_local_size_3d (see also http://www.fftw.org/doc/MPI-Data-Distribution-Functions.html)
    *
    */
+  fft->global_size_grid = n1 * n2 * n3;
+  fft->local_size_grid = fftw_mpi_local_size_3d(n1, n2, n3, fft->mpi_comm, &fft->local_n1, &fft->local_n1_offset);
   fft->fftw_data = ( fftw_complex* ) fftw_malloc( fft->local_size_grid * sizeof( fftw_complex ) );
 
   /*
@@ -66,8 +65,8 @@ void init_fftw(fftw_mpi_handler *fft, int n1, int n2, int n3, MPI_Comm mpi_comm)
    * Use fftw_mpi_plan_dft_3d: http://www.fftw.org/doc/MPI-Plan-Creation.html#MPI-Plan-Creation
    *
    */
-  fft->fw_plan = NULL;
-  fft->bw_plan = NULL;
+  fft->fw_plan = fftw_mpi_plan_dft_3d(n1, n2, n3, fft->fftw_data, fft->fftw_data, fft->mpi_comm, FFTW_FORWARD, FFTW_ESTIMATE);
+  fft->bw_plan = fftw_mpi_plan_dft_3d( n1, n2, n3, fft->fftw_data, fft->fftw_data, fft->mpi_comm, FFTW_BACKWARD, FFTW_ESTIMATE);
 
 }
 
@@ -98,7 +97,7 @@ void close_fftw(fftw_mpi_handler *fft)
  * f(l) = 1/N \sum_{k=0}^{N-1} exp(+ 2 \pi I k*l/N) F(k)
  * 
  */
-void fft_3d(fftw_mpi_handler* fft, int n1, int n2, int n3, double *data_direct, fftw_complex* data_rec, bool direct_to_reciprocal)
+void fft_3d(fftw_mpi_handler* fft, double *data_direct, fftw_complex* data_rec, bool direct_to_reciprocal)
 {
     double fac;
     int i;
@@ -106,24 +105,24 @@ void fft_3d(fftw_mpi_handler* fft, int n1, int n2, int n3, double *data_direct, 
     // Now distinguish in which direction the FFT is performed
     if ( direct_to_reciprocal)
       {
-	for(i = 0; i < n1*n2*n3; i++)
+	for(i = 0; i < fft->local_size_grid; i++)
 	  {
 	    fft->fftw_data[i]  = data_direct[i] + 0.0 * I;
 	  } 
 	
 	fftw_execute_dft(fft->fw_plan, fft->fftw_data, fft->fftw_data);
 
-	memcpy(data_rec, fft->fftw_data, n1*n2*n3*sizeof(fftw_complex)); 
+	memcpy(data_rec, fft->fftw_data, fft->local_size_grid*sizeof(fftw_complex)); 
       }
     else
       {
-	memcpy(fft->fftw_data, data_rec, n1*n2*n3*sizeof(fftw_complex));
+	memcpy(fft->fftw_data, data_rec, fft->local_size_grid*sizeof(fftw_complex));
 	  
 	fftw_execute_dft(fft->bw_plan, fft->fftw_data, fft->fftw_data);
 	
-	fac = 1.0 / ( n1 * n2 * n3 );
+	fac = 1.0 / (fft->local_size_grid);
 	
-	for( i = 0; i < n1 * n2 * n3; ++i )
+	for( i = 0; i < fft->local_size_grid; ++i )
 	  {
 	    data_direct[i] = creal(fft->fftw_data[i])*fac;
 	  }
