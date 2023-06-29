@@ -2,14 +2,37 @@
 
 declare -a NP=("1" "2" "5" "8" "10")
 
-declare -a args=("50000 0 0")
+declare -a args=("5000 0 0")
 
+module load spectrum_mpi/
+module load cuda
+module load autoload openblas/
+
+#make
+#for ((i=0; i<${#NP[@]}; i++))
+#do
+#    for ((j=0; j<${#args[@]}; j++))
+#    do
+#	make run NP="${NP[$i]}" ARGS="${args[$j]}"
+#    done
+#done
+
+#make clean
+make USE_CBLAS=1
 for ((i=0; i<${#NP[@]}; i++))
 do
     for ((j=0; j<${#args[@]}; j++))
     do
-	mpirun -np "${NP[$i]}" matrix_mul.o "${args[$j]}"
- 
+        make run NP="${NP[$i]}" ARGS="${args[$j]}"
     done
 done
-	   
+make clean USE_CBLAS=1
+make USE_GPU=1
+for ((i=0; i<${#NP[@]}; i++))
+do
+    for ((j=0; j<${#args[@]}; j++))
+    do
+        make run NP="${NP[$i]}" ARGS="${args[$j]}"
+    done
+done
+make clean USE_GPU=1
