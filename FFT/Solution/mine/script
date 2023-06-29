@@ -1,0 +1,31 @@
+#!/bin/bash
+
+declare -a NP=("1" "2" "5" "8" "10")
+
+declare -a args=("240 240 480 1e-3 100")
+
+module load autoload fftw/
+
+make
+
+for ((i=0; i<${#NP[@]}; i++))
+do
+    for ((j=0; j<${#args[@]}; j++))
+    do
+	make run NP="${NP[$i]}" ARGS="${args[$j]}"	
+    done
+done
+	   
+make clean
+
+make fftw3
+
+for ((i=0; i<${#NP[@]}; i++))
+do
+    for ((j=0; j<${#args[@]}; j++))
+    do
+	make run NP="${NP[$i]}" ARGS="${args[$j]}"	
+    done
+done
+
+make clean
