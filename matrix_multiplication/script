@@ -2,7 +2,7 @@
 
 declare -a NP=("1" "2" "5" "8" "10")
 
-declare -a args=("5000 0 0")
+declare -a args=("500 0 0")
 
 module load spectrum_mpi/
 module load cuda
@@ -17,7 +17,7 @@ module load autoload openblas/
 #    done
 #done
 
-#make clean
+make clean
 make USE_CBLAS=1
 for ((i=0; i<${#NP[@]}; i++))
 do
