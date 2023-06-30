@@ -6,6 +6,8 @@ SRC = diffusion.c plot_data.c fft_wrapper.c derivative.c
 HEAD = utilities.h
 OBJ = $(SRC:.c=.o)
 
+NP=1
+ARGS = 2 2 2 2e-3 100
 
 all: $(EXE)
 
@@ -14,6 +16,15 @@ $(EXE): $(OBJ)
 
 %.o : %.c $(HEAD)
 	$(CC) $(CFLAGS) -c $<
+
+fftw3: CFLAGS += -DFFTW3_MPI
+fftw3: $(EXE)
+
+run:
+	mpirun -np $(NP) $(EXE) $(ARGS) 
+
+plot: concentration_1.dat
+	gnuplot animate.plt
 
 flush:
 	rm -f *.dat

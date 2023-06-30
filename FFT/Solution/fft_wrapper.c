@@ -9,9 +9,8 @@
  * Created by G.P. Brandino, I. Girotto, R. Gebauer
  * Last revision: March 2016
  *
- */ 
+ */
 
-#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include "utilities.h"
@@ -40,6 +39,9 @@ int index_f ( int i1, int i2, int i3, int n1, int n2, int n3){
 void init_fftw(fftw_dist_handler *fft, int n1, int n2, int n3, MPI_Comm comm){
   
   int npes, mype;
+
+  MPI_Comm_size( comm, &npes );
+  MPI_Comm_rank( comm, &mype );
   
   fft->mpi_comm = comm;
 
@@ -50,9 +52,6 @@ void init_fftw(fftw_dist_handler *fft, int n1, int n2, int n3, MPI_Comm comm){
   
   #else
   
-  MPI_Comm_size( comm, &npes );
-  MPI_Comm_rank( comm, &mype );
-  
   fft->n1 = n1;
   fft->n2 = n2;
   fft->n3 = n3;
@@ -60,7 +59,7 @@ void init_fftw(fftw_dist_handler *fft, int n1, int n2, int n3, MPI_Comm comm){
   fft->local_n1_offset = fft->local_n1*mype;
   fft->local_n2 = fft->n2/npes;
   fft->local_size_grid = fft->local_n1*fft->n2*fft->n3;
-  fft->local_square = fft->local_n1 * fft->local_n2;
+  fft->local_square = fft->local_n1 * fft->local_n2 * fft->n3;
   
   MPI_Type_vector(fft->local_n1, fft->local_n2 * fft->n3, fft->n2 * fft->n3, MPI_C_DOUBLE_COMPLEX,
                   &(fft->Elem_Pack));
@@ -79,8 +78,8 @@ void init_fftw(fftw_dist_handler *fft, int n1, int n2, int n3, MPI_Comm comm){
   for (int i = 0; i < npes; i++) {
     fft->counts[i] = 1;
     fft->counts_T[i] = fft->local_square;
-    fft->displacement[i] = i==0 ? 0 : fft->displacement[i] + fft->local_n2*fft->n3*sizeof(fftw_complex);
-    fft->displacement_T[i] = i==0 ? 0 : fft->displacement_T[i] + fft->local_square*sizeof(fftw_complex); 
+    fft->displacement[i] = i==0 ? 0 : fft->displacement[i-1] + fft->local_n2*fft->n3*sizeof(fftw_complex);
+    fft->displacement_T[i] = i==0 ? 0 : fft->displacement_T[i-1] + fft->local_square*sizeof(fftw_complex); 
     fft->Elem_Type[i] = fft->Elem_Pack;
     fft->Elem_Type_T[i] = MPI_C_DOUBLE_COMPLEX;
   }
@@ -165,7 +164,7 @@ void init_fftw(fftw_dist_handler *fft, int n1, int n2, int n3, MPI_Comm comm){
 
 void close_fftw( fftw_dist_handler *fft ){
   
-  #ifdef _FFTW3_MPI
+  #ifdef FFTW3_MPI
 
   fftw_destroy_plan(fft->fw_plan);
   fftw_destroy_plan(fft->bw_plan);
@@ -181,10 +180,9 @@ void close_fftw( fftw_dist_handler *fft ){
   free(fft->counts_T);
   free(fft->displacement);
   free(fft->displacement_T);
-  MPI_Type_free(fft->Elem_Type);
-  MPI_Type_free(fft->Elem_Type_T);
+  free(fft->Elem_Type);
+  free(fft->Elem_Type_T);
   MPI_Type_free(&(fft->Elem_Pack));
-
   #endif
 
   fftw_free(fft->fftw_data);
@@ -212,54 +210,90 @@ void close_fftw( fftw_dist_handler *fft ){
 void fft_3d( fftw_dist_handler* fft, double *data_direct, fftw_complex* data_rec, bool direct_to_reciprocal ){
 
   double fac;
-  int npes;
+  int npes, mype;
+  int local_size_grid = fft->local_size_grid;
+  fftw_complex *data = fft->fftw_data;
 
+  #ifndef FFTW3_MPI
+  
+  int *counts = fft->counts, *counts_T = fft->counts_T, *displacement_T = fft->displacement_T, *displacement = fft->displacement;
+  MPI_Datatype *Elem_Type = fft->Elem_Type, *Elem_Type_T = fft->Elem_Type_T;
+  fftw_complex *data_T = fft->fftw_data_T;
+
+  #endif
+  
   /* Allocate buffers to send and receive data */
 
   MPI_Comm_size( fft->mpi_comm, &npes );
-    
+  MPI_Comm_rank( fft->mpi_comm, &mype );
+  
   // Now distinguish in which direction the FFT is performed
   if( direct_to_reciprocal ){
 
-    for(int i = 0; i < fft->local_size_grid; i++)
-	    fft->fftw_data[i]  = data_direct[i] + 0.0 * I;
-	  
+    for(int i = 0; i < local_size_grid; i++)
+	    data[i]  = data_direct[i] + 0.0 * I;
+
+    //print_data(data, local_size_grid);
     #ifdef FFTW3_MPI
 
-    fftw_execute_dft(fft->fw_plan, fft->fftw_data, fft->fftw_data);
+    fftw_execute(fft->fw_plan);
     
     #else
 
-    fftw_execute(fft->fw_plan_2D); 
-    MPI_Alltoallw(fft->fftw_data, fft->counts, fft->displacement, fft->Elem_Type, fft->fftw_data_T, fft->counts_T, fft->displacement_T, fft->Elem_Type_T, MPI_COMM_WORLD);
+    fftw_execute(fft->fw_plan_2D);
+    //if(mype==0) print_data(data, local_size_grid);
+    MPI_Alltoallw(data, counts, displacement, Elem_Type, data_T, counts_T, displacement_T, Elem_Type_T, MPI_COMM_WORLD);
+    //if(mype==0) print_data(data_T, local_size_grid);
     fftw_execute(fft->fw_plan_1D); 
-    MPI_Alltoallw(fft->fftw_data_T, fft->counts_T, fft->displacement_T, fft->Elem_Type_T, fft->fftw_data, fft->counts, fft->displacement, fft->Elem_Type, MPI_COMM_WORLD);
+    MPI_Alltoallw(data_T, counts_T, displacement_T, Elem_Type_T, data, counts, displacement, Elem_Type, MPI_COMM_WORLD);
 
     #endif
 
-    memcpy(data_rec, fft->fftw_data, fft->local_size_grid * sizeof(fftw_complex));
+    memcpy(data_rec, data, local_size_grid * sizeof(fftw_complex));
 
   }
   else{
     
-    memcpy(fft->fftw_data, data_rec, fft->local_size_grid * sizeof(fftw_complex));
+    memcpy(data, data_rec, local_size_grid * sizeof(fftw_complex));
 
-    #ifdef _FFTW3_MPI
+    #ifdef FFTW3_MPI
     fftw_execute(fft->bw_plan);
     #else
     fftw_execute(fft->bw_plan_2D); 
-    MPI_Alltoallw(fft->fftw_data, fft->counts, fft->displacement, fft->Elem_Type, fft->fftw_data_T, fft->counts_T, fft->displacement_T, fft->Elem_Type_T, MPI_COMM_WORLD);
+    MPI_Alltoallw(data, counts, displacement, Elem_Type, data_T, counts_T, displacement_T, Elem_Type_T, MPI_COMM_WORLD);
     fftw_execute(fft->bw_plan_1D); 
-    MPI_Alltoallw(fft->fftw_data_T, fft->counts_T, fft->displacement_T, fft->Elem_Type_T, fft->fftw_data, fft->counts, fft->displacement, fft->Elem_Type, MPI_COMM_WORLD);
+    MPI_Alltoallw(data_T, counts_T, displacement_T, Elem_Type_T, data, counts, displacement, Elem_Type, MPI_COMM_WORLD);
     #endif
 
     fac = 1.0 / fft->global_size_grid;
 
-    for (int i = 0; i < fft->local_size_grid; i++)
-      data_direct[i] = creal(fft->fftw_data[i]) * fac;
+    for (int i = 0; i < local_size_grid; i++)
+      data_direct[i] = creal(data[i]) * fac;
     
     
   }
   
 }
 
+
+void print_data(fftw_complex * data, int len){
+
+  for(int i=0; i<len;i++)
+    printf("(%f, %f) ", creal(data[i]), cimag(data[i]));
+  printf("\n");
+  
+}
+
+
+void save_times(int rank, int size, int n1, int n2, int n3, float t_step, int n_iter, float t){
+
+  FILE *file_;
+  
+  #ifdef FFTW3_MPI
+  file_ = fopen("time_fftw3_mpi.dat","a");
+  #else
+  file_ = fopen("time_homemade.dat","a");
+  #endif
+  fprintf(file_, "%u\t%u\t%u\t%u\t%u\t%f\t%u\t%f\n", rank, size, n1, n2, n3, t_step, n_iter, t);
+  fclose(file_); 
+}
