@@ -71,7 +71,7 @@ int neighbor(int rank, int size, int up);
 void update_halos(double * matrix, int rank, int size, int dim, MPI_Comm Comm);
 
 // evolve Jacobi
-double evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm );
+void evolve( double * matrix, double *matrix_new, int rank, int size, int dim, MPI_Comm Comm, float* t_comp, float* t_comm);
 
 // create offset vector
 int* set_offset(int rank, int size, int dim);

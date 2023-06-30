@@ -24,7 +24,7 @@ int main(int argc, char* argv[]){
 
   size_t dimension = 0, iterations = 0;
   size_t matrix_dimension = 0;
-  double t_start, t_end, t_computation=0;
+  float t_comm=0, t_comp=0;
   // check on input parameters
   if(argc != 4) {
     fprintf(stderr,"\nwrong number of arguments. Usage: ./a.out dim it n m\n");
@@ -75,9 +75,6 @@ int main(int argc, char* argv[]){
     init_boundary_conditions(matrix, increment, rank, size, dimension, true);
     init_boundary_conditions(matrix_new, increment, rank, size, dimension, true);
   
-    // start algorithm
-    t_start = MPI_Wtime();
-  
 #ifdef ACC
     const acc_device_t devtype = acc_get_device_type(); // Device type (e.g. Tesla)
     const int num_devs = acc_get_num_devices(devtype); // Number of devices per node
@@ -86,19 +83,23 @@ int main(int argc, char* argv[]){
 
 #pragma acc enter data copyin(matrix[:my_last_element_idx_loc(rank, size, dimension,true)], matrix_new[:my_last_element_idx_loc(rank, size, dimension,true)])
 #endif
+
+    // start algorithm
+    //t_start = MPI_Wtime();
   
     for( it = 0; it < iterations; ++it ){
    
-      t_computation += evolve(matrix, matrix_new, rank, size, dimension, Comm);
+      evolve(matrix, matrix_new, rank, size, dimension, Comm, &t_comp, &t_comm);
       // swap the pointers
       tmp_matrix = matrix;
       matrix = matrix_new;
       matrix_new = tmp_matrix;
     
     }
+    
+    //t_end = MPI_Wtime();
     MPI_Barrier(Comm);
-    t_end = MPI_Wtime();
-
+    
 #ifdef ACC
 #pragma acc exit data copyout(matrix[:my_last_element_idx_loc(rank, size, dimension,true)], matrix_new[:my_last_element_idx_loc(rank, size, dimension,true)])
 #endif
@@ -106,10 +107,10 @@ int main(int argc, char* argv[]){
   
     //printf( "\nelapsed time = %f seconds\n", t_end - t_start );
 
-    save_result(matrix, rank, size, dimension, Comm);
+    //save_result(matrix, rank, size, dimension, Comm);
 
   
-    save_times(rank, size, dimension, iterations, t_end-t_start, t_computation, Comm);
+    save_times(rank, size, dimension, iterations, t_comm, t_comp, Comm);
     
   
     free( matrix );

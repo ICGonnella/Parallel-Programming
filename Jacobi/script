@@ -2,38 +2,38 @@
 
 declare -a NP=("10" "8" "5" "2" "1")
 
-declare -a args=("10000 1000")
+declare -a args=("20000 1000")
 
 declare -a ref=("0")
 
 module load autoload hpc-sdk/
 module load cuda
 
-#make
-
-#for ((i=0; i<${#NP[@]}; i++))
-#do
-#    for ((j=0; j<${#args[@]}; j++))
-#    do
-#	for ((k=0; k<${#ref[@]}; k++))
-#	do
-#	    make run NP="${NP[$i]}" ARGS="${args[$j]}" ID_REF="${ref[$k]}"
-#	done
-#    done
-#done
-	   
-#make clean
-make acc
+make
 
 for ((i=0; i<${#NP[@]}; i++))
 do
     for ((j=0; j<${#args[@]}; j++))
     do
-        for ((k=0; k<${#ref[@]}; k++))
-        do
-            make run NP="${NP[$i]}" ARGS="${args[$j]}" ID_REF="${ref[$k]}"
-        done
+	for ((k=0; k<${#ref[@]}; k++))
+	do
+	    make run NP="${NP[$i]}" ARGS="${args[$j]}" ID_REF="${ref[$k]}"
+	done
     done
 done
-
+	   
 make clean
+#make acc
+
+#for ((i=0; i<${#NP[@]}; i++))
+#do
+#    for ((j=0; j<${#args[@]}; j++))
+#    do
+#        for ((k=0; k<${#ref[@]}; k++))
+#        do
+#            make run NP="${NP[$i]}" ARGS="${args[$j]}" ID_REF="${ref[$k]}"
+#        done
+#    done
+#done
+
+#make clean
