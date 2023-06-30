@@ -32,12 +32,12 @@ int main(int argc, char* argv[]){
   MPI_Comm_size(MPI_COMM_WORLD, &n_prc);
 
   if(argc != 4) {
-    fprintf(stderr,"\nwrong number of arguments. Usage: ./a.out dim it n m\n");
+    fprintf(stderr,"\nwrong number of arguments. Usage: ./a.out dim create val\n");
     return 1;
   }
   
   /* time variables */
-  double tic1,tic2,tic3, communication_t=0, computation_t=0;
+  float tic, toc, tic1, toc1, tic2, toc2, tic3, toc3, tic4, toc4, t_comm=0, t_comp=0, single_time=0;
   int N = atoi(argv[1]);
   int create = atoi(argv[2]);
   int val = atoi(argv[3]);
@@ -98,12 +98,7 @@ int main(int argc, char* argv[]){
     cudaMalloc((void**)&A_dev, n_loc*N*sizeof(double));
     cudaMalloc((void**)&B_dev, n_loc_vect[0]*N*sizeof(double));
     cudaMalloc((void**)&C_dev, n_loc*N*sizeof(double));
-
-    cudaEvent_t start, stop;
-    float comm1Time=0, comm2Time=0;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    //cudaEventRecord(start, 0);
+    
 #endif
   
     /* count and displacement arrays needed for MPI_Allgatherv function in case of the first columns considered (having also the rest contribute) */
@@ -143,6 +138,7 @@ int main(int argc, char* argv[]){
       printf("MATRICES HAVE BEEN CREATED\n");
     }
     MPI_Barrier(Comm);
+
     /* each process reads the correct portion of the input matrices */
     FILE *fileA, *fileB;
     fileA = fopen("matrixA.csv","r");
@@ -172,67 +168,108 @@ int main(int argc, char* argv[]){
     cublasHandle_t handle;
     cublasCreate(&handle);
     cudaMemcpy(A_dev,A,n_loc*N*sizeof(double),cudaMemcpyHostToDevice);
-    //cudaMemcpy(C_dev,C_star,n_loc*N*sizeof(double),cudaMemcpyHostToDevice);
-#endif
-  
+    cudaEvent_t start, stop, start1, stop1, start2, stop2, start3, stop3, start4, stop4, start_comp, stop_comp;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventCreate(&start1);
+    cudaEventCreate(&stop1);
+    cudaEventCreate(&start2);
+    cudaEventCreate(&stop2);
+    cudaEventCreate(&start3);
+    cudaEventCreate(&stop3);
+    #endif
+
     /* COMPUTATIONAL LOOP */
     for(i=0;i<n_prc;i++) {
       /* create the portion of local B matrix to be gathered */
+      //--------------------------update t_comm --------------------------
+      MPI_Barrier(Comm);
+      #ifdef USE_GPU
+      cudaEventRecord(start, 0);
+      #else
+      tic = MPI_Wtime();
+      #endif
       for(j=0;j<n_loc*n_loc_vect[i];j++) B_tmp[j]=B[n_col_sum[i]+(j/n_loc_vect[i])*N+(j%n_loc_vect[i])];
-
-      tic1 = MPI_Wtime();
       /* Allgatherv */
       if(i<rest || n_prc==1) MPI_Allgatherv(B_tmp,n_loc*n_loc_vect[i],MPI_DOUBLE,B_star,count_allgatherv_rest,displ_allgatherv_rest,MPI_DOUBLE,Comm);
       else MPI_Allgatherv(B_tmp,n_loc*n_loc_vect[i],MPI_DOUBLE,B_star,count_allgatherv,displ_allgatherv,MPI_DOUBLE,Comm);
-
-      tic2 = MPI_Wtime();
-      communication_t += tic2-tic1;
-
+      #ifdef USE_GPU
+      cudaEventRecord(stop, 0);
+      cudaEventSynchronize(stop);
+      cudaEventElapsedTime(&single_time, start, stop);
+      t_comm+=single_time/1000;
+      #else
+      toc = MPI_Wtime();
+      t_comm +=toc-tic;
+      #endif
+      //if(id==0) printf("t_comm=%f\n",t_comm);
       // COMPUTATIONAL CORE
 #ifdef USE_CBLAS
+      //--------------------------update t_comp CBLAS--------------------------
+      tic1 = MPI_Wtime();
       cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,n_loc,n_loc_vect[i],N,1.0,A,N,B_star,n_loc_vect[i],0.0,&C_star[n_col_sum[i]],N);
-      tic3=MPI_Wtime();
-      computation_t += tic3-tic2;
+      toc1=MPI_Wtime();
+      t_comp+=toc1-tic1;
 #elif defined(USE_GPU)
-      cudaEventRecord(start, 0);
+      //--------------------------update t_comm GPU_CASE--------------------------
+      cudaEventRecord(start1, 0);
       cudaMemcpy(B_dev,B_star,n_loc_vect[i]*N*sizeof(double),cudaMemcpyHostToDevice);
-      cudaEventRecord(stop, 0);
-      
-      cudaEventSynchronize(stop);
-      cudaEventElapsedTime(&comm1Time, start, stop);
-      computation_t += gpu_mm(A_dev,B_dev,C_dev,C_star,n_loc_vect,n_loc,i,n_col_sum,alpha,beta,N,n_prc,handle);
-
+      cudaEventRecord(stop1, 0);
+      cudaEventSynchronize(stop1);
+      cudaEventElapsedTime(&single_time, start1, stop1);
+      t_comm+=single_time/1000;
+      //--------------------------update t_comp CUBLAS--------------------------
+      cudaEventRecord(start2, 0);
+      gpu_mm(A_dev,B_dev,C_dev,C_star,n_loc_vect,n_loc,i,n_col_sum,alpha,beta,N,n_prc,handle);
+      cudaEventRecord(stop2, 0);
+      cudaEventSynchronize(stop2);
+      cudaEventElapsedTime(&single_time, start2, stop2);
+      t_comp+=single_time/1000;
+      //if(id==0) printf("t_commGPU1=%f\n",t_comm);
+      //--------------------------update t_comm GPU_CASE--------------------------
       if (i==n_prc-1){
-     	cudaEventRecord(start, 0);
+     	cudaEventRecord(start3, 0);
      	cudaMemcpy(C_star,C_dev,n_loc*N*sizeof(double),cudaMemcpyDeviceToHost);
-	cudaEventRecord(stop, 0);
-	
-	cudaEventSynchronize(stop);
-        cudaEventElapsedTime(&comm2Time, start, stop);
+	cudaEventRecord(stop3, 0);
+	cudaEventSynchronize(stop3);
+        cudaEventElapsedTime(&single_time, start3, stop3);
+	t_comm+=single_time/1000;
+	//if(id==0) printf("t_commGPU2=%f\n",t_comm);
       }
-
-      communication_t += comm1Time+ comm2Time;
 #else
-      /* compute the C_tmp */
+      //--------------------------update t_comp NAIVE--------------------------
+      tic2 = MPI_Wtime();
       for(j=0;j<n_loc;j++)   // row of A
 	for(k=0;k<n_loc_vect[i];k++)  // column of B
 	  for(w=0;w<N;w++) {
 	    idx = j*n_loc_vect[i]+k;
 	    C_star[n_col_sum[i]+(idx/n_loc_vect[i])*N+(idx%n_loc_vect[i])] += A[j*N+w]*B_star[w*n_loc_vect[i]+k];
 	  }
-      tic3=MPI_Wtime();
-      computation_t += tic3-tic2;
+      toc2=MPI_Wtime();
+      t_comp += toc2-tic2;
 #endif
     }
-
-    tic1 = MPI_Wtime();
+    
     /* Gatherv of C_star matrices */
+    //--------------------------update t_comm--------------------------
+    /*#ifdef USE_GPU
+    cudaEventRecord(start4, 0);
+    #else
+    tic3 = MPI_Wtime();
+    #endif*/
     MPI_Gatherv(C_star,N*n_loc,MPI_DOUBLE,C,count_gatherv,displ_gatherv,MPI_DOUBLE,ROOT,Comm);
-    tic2 = MPI_Wtime();
-    communication_t += tic2-tic1;
-    //printf("comm OUT %f\n", communication_t);
+    /*#ifdef USE_GPU
+    cudaEventRecord(stop4, 0);
+    cudaEventSynchronize(stop4);
+    cudaEventElapsedTime(&single_time, start4, stop4);
+    t_comm+=single_time/1000;
+    #else
+    toc3 = MPI_Wtime();
+    t_comm +=toc3-tic3;
+    #endif*/
+
     /* write the result on a file and print it */
-    if(id==ROOT) {
+    if(id==ROOT && create==1) {
       FILE *fileC;
       remove("matrixC.csv");
       fileC = fopen("matrixC.csv","w");
@@ -240,7 +277,7 @@ int main(int argc, char* argv[]){
       printf("------ matrix C ------\n");
       print_matrix(C,N,N);
     }
-    save_times(id, n_prc, N, communication_t, computation_t, Comm);
+    save_times(id, n_prc, N, t_comm, t_comp, Comm);
     //printf("communication_t = %.3g\ncomputation_t = %.3g \n",communication_t, computation_t);
   }
   
@@ -251,11 +288,20 @@ int main(int argc, char* argv[]){
 void save_times(int rank, int size, int dim, double t_comm, double t_comp, MPI_Comm Comm){
 
   FILE *file_comm, *file_comp;
-
+  char *name_comm = "time_comm.dat", *name_comp = "time_comp.dat";
+  #ifdef USE_GPU
+  name_comm = "time_comm_GPU.dat";
+  name_comp = "time_comp_GPU.dat";
+  #endif
+  #ifdef USE_CBLAS
+  name_comm = "time_comm_CBLAS.dat";
+  name_comp = "time_comp_CBLAS.dat";
+  #endif
+  
   for (int i = 0; i < size; ++i) {
     if(rank==i) {
-      file_comm = fopen("time_comm.dat", "a");
-      file_comp = fopen("time_comp.dat", "a");
+      file_comm = fopen(name_comm, "a");
+      file_comp = fopen(name_comp, "a");
       fprintf(file_comm, "%u\t%u\t%u\t%f\n", rank, size, dim, t_comm );
       fprintf(file_comp, "%u\t%u\t%u\t%f\n", rank, size, dim, t_comp );
       fclose(file_comm);
