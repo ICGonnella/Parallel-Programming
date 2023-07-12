@@ -2,37 +2,29 @@
 
 declare -a NP=("1" "2" "5" "8" "10")
 
-declare -a args=("1000 100" "1000 1000" "5000 100" "5000 1000" "10000 100" "10000 1000")
+declare -a args=("80 80 160 1e-3 1000")
 
-declare -a ref=("0")
+module load autoload fftw/
 
-module load autoload hpc-sdk/
-module load cuda
-
-#make
-
-#for ((i=0; i<${#NP[@]}; i++))
-#do
-#    for ((j=0; j<${#args[@]}; j++))
-#    do
-#	for ((k=0; k<${#ref[@]}; k++))
-#	do
-#	    make run NP="${NP[$i]}" ARGS="${args[$j]}" ID_REF="${ref[$k]}"
-#	done
-#    done
-#done
-	   
-#make clean
-make acc
+make
 
 for ((i=0; i<${#NP[@]}; i++))
 do
     for ((j=0; j<${#args[@]}; j++))
     do
-        for ((k=0; k<${#ref[@]}; k++))
-        do
-            make run NP="${NP[$i]}" ARGS="${args[$j]}" ID_REF="${ref[$k]}"
-        done
+	make run NP="${NP[$i]}" ARGS="${args[$j]}"	
+    done
+done
+	   
+make clean
+
+make fftw3
+
+for ((i=0; i<${#NP[@]}; i++))
+do
+    for ((j=0; j<${#args[@]}; j++))
+    do
+	make run NP="${NP[$i]}" ARGS="${args[$j]}"	
     done
 done
 
